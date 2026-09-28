@@ -1,0 +1,156 @@
+-- 1.Prikazati SQL upit kojim se iz odabranog skupa podataka izdvajaju prvih ili poslednjih N torki (2p).
+SELECT TOP 10 ProductName, UnitPrice
+FROM Products
+ORDER BY UnitPrice DESC;
+
+-- 2.Rad sa dve ili više tabela korišćenjem različitih tipova spajanja tabela.
+--Minimalno dva tipa spajanja tabela moraju biti primenjena u istim ili različitim upitima (3p).
+
+SELECT o.OrderID, c.CompanyName, o.OrderDate
+FROM Orders o 
+INNER JOIN Customers c ON o.CustomerID = c.CustomerID;
+
+SELECT c.CompanyName, o.OrderID
+FROM Customers c 
+LEFT JOIN Orders o ON c.CustomerID = o.CustomerID
+WHERE o.OrderID IS NULL;
+
+SELECT o.OrderID, c.CompanyName, e.employeeName, o.OrderDate
+FROM Orders o
+INNER JOIN Customers c ON o.CustomerID = c.CustomerID
+LEFT JOIN Employees e ON o.EmployeeID = e.EmployeeID;
+
+-- 3.Prikazati SQL upit koji obuhvata filtriranje podataka nad pojedinačnim ili agregiranim vrednostima (3p).
+SELECT CustomerID, COUNT(*) AS broj_porudzbina
+FROM Orders
+GROUP BY CustomerID
+HAVING COUNT(*) > 20;
+
+SELECT customerID, COUNT(orderID) AS BrojPorudzbina
+FROM Orders
+WHERE customerID IS NOT NULL -- Filtriranje pojedinačnih vrednosti (izostavljamo null ako ih ima)
+GROUP BY customerID
+HAVING COUNT(orderID) > 10; -- Filtriranje nad agregacijom (samo oni sa > 10 porudžbina)
+
+-- 4.Primena jedne distributivne i jedne algebarske funkcije u kontekstu analize izabranog skupa podataka (2p + 2p).
+SELECT categoryID, 
+       COUNT(productID) AS BrojProizvoda, -- Distributivna funkcija
+       AVG(unitPrice) AS ProsecnaCena     -- Algebarska funkcija
+FROM Products
+GROUP BY categoryID;
+
+
+-- 5. Primena dve holističke funkcije u kontekstu analize izabranog skupa podataka i interpretacija rezultata (3p + 3p).
+SELECT productName, categoryID, unitPrice,
+       RANK() OVER(PARTITION BY categoryID ORDER BY unitPrice DESC) AS RangCene,
+       DENSE_RANK() OVER(PARTITION BY categoryID ORDER BY unitPrice DESC) AS GustiRangCene
+FROM Products;
+
+-- 6.Prikazati SQL upit koji koristi naprednije tehnike grupisanja podataka kao što su sumiranje podataka po više dimenzija,
+-- grupisanje po hijerarhijama (2p).
+SELECT employeeID, customerID, SUM(freight) AS UkupnaVozarina
+FROM Orders
+GROUP BY ROLLUP(employeeID, customerID);
+
+SELECT
+    Country,
+    City,
+    COUNT(CustomerID) AS TotalCustomers
+FROM Customers
+GROUP BY ROLLUP (Country, City) -- Kreira sume za (Country, City), (Country), i ukupni total
+ORDER BY Country, City;
+
+-- 7.Prikazati primenu agregacionih funkcija u kombinaciji sa WINDOW klauzulom za izračunavanje različitih vrednosti 
+--(npr. pokretni prosek, kumulativni zbir, procentualni udeo) (2p).
+SELECT orderDate, orderID, freight,
+       SUM(freight) OVER(ORDER BY orderDate) AS KumulativnaVozarina,
+       AVG(freight) OVER(ORDER BY orderDate ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS PokretniProsekVozarine
+FROM Orders;
+
+SELECT 
+    OD.ProductID,
+    OD.OrderID, 
+    OD.Quantity,
+    -- Kumulativni zbir Quantity
+    SUM(OD.Quantity) OVER (PARTITION BY OD.ProductID ORDER BY OD.OrderID) AS CumulativeQuantity,
+	-- Procentualni udeo (Percent of Total)
+    CAST(OD.Quantity * 100.0 / SUM(OD.Quantity) OVER (PARTITION BY OD.ProductID) AS DECIMAL(5, 2)) AS PercentOfTotalQuantity
+FROM Order_Details OD
+ORDER BY OD.ProductID, OD.OrderID;
+
+-- 8.Prikazati primenu agregacionih funkcija sa WINDOW klauzulom uz ograničavanje dela particije 
+--(prikaz izračunavanja u okviru definisanog segmenta podataka) (3p).
+SELECT orderID, productID, quantity,
+       SUM(quantity) OVER(PARTITION BY orderID ORDER BY productID 
+       ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS SegmentnaSumaKolicine
+FROM Order_Details;
+
+SELECT 
+  o.OrderDate,
+  SUM(od.UnitPrice * od.Quantity) AS prodaja,
+  AVG(SUM(od.UnitPrice * od.Quantity)) 
+    OVER (
+      ORDER BY o.OrderDate
+      ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+    ) AS pokretni_prosek_3_dana
+FROM Orders o
+JOIN Order_Details od ON o.OrderID = od.OrderID
+GROUP BY o.OrderDate
+ORDER BY o.OrderDate;
+
+SELECT 
+    OrderID, 
+    CustomerID, 
+    OrderDate,
+    Freight,
+    -- Ogranicavanje na Kumulativni zbir za trenutni red i 2 prethodna reda
+    SUM(Freight) OVER (
+        PARTITION BY CustomerID 
+        ORDER BY OrderDate
+        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW -- Ogranicava izracunavanje
+    ) AS CumulativeFreight_Last3Orders
+FROM Orders
+ORDER BY CustomerID, OrderDate;
+
+-- 9.Prikazati SQL upit sa transformacijom podataka primenom PIVOT funkcije. Prikazati rezultat pre i posle transformacije (3p).
+-- Rezultat POSLE transformacije (za kategorije 1, 2 i 3)
+SELECT e.employeeName, YEAR(o.orderDate) AS Godina, COUNT(o.orderID) AS BrojPorudzbina
+FROM Employees e
+JOIN Orders o ON e.employeeID = o.employeeID
+WHERE e.employeeName IN ('Nancy Davolio', 'Andrew Fuller', 'Janet Leverling')
+GROUP BY e.employeeName, YEAR(o.orderDate)
+ORDER BY e.employeeName, Godina;
+
+SELECT *
+FROM (
+    -- Izvor podataka (Source)
+    SELECT e.employeeName, YEAR(o.orderDate) AS Godina, o.orderID
+    FROM Employees e
+    JOIN Orders o ON e.employeeID = o.employeeID
+    WHERE e.employeeName IN ('Nancy Davolio', 'Andrew Fuller', 'Janet Leverling')
+) AS Izvor
+PIVOT (
+    COUNT(orderID)
+    FOR Godina IN ([1996], [1997], [1998]) -- Ove godine su standardne u Northwindu
+) AS PivotTabela;
+
+
+-- 10.Kreirati najmanje jedan pogled (SQL View) na osnovu nekog kompleksnijeg upita korišćenog u analizi (2p). 
+--Materijalizovati kreirani pogled putem CREATE TABLE AS SELECT.
+-- Zahtev 10: Kreiranje pogleda na osnovu kompleksnog upita
+CREATE VIEW v_KompleksnaAnalizaUcinka AS
+SELECT 
+    e.employeeName, 
+    COUNT(DISTINCT o.orderID) AS UkupanBrojPorudzbina,
+    SUM(od.unitPrice * od.quantity) AS UkupnaZarada,
+    AVG(od.unitPrice * od.quantity) AS ProsecnaVrednostStavke
+FROM Employees e
+INNER JOIN Orders o ON e.employeeID = o.employeeID
+INNER JOIN Order_Details od ON o.orderID = od.orderID
+GROUP BY e.employeeName;
+
+
+SELECT * INTO MaterijalizovaniIzvestajProdaje 
+FROM v_KompleksnaAnalizaUcinka;
+
+
